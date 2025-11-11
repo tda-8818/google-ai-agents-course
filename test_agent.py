@@ -20,7 +20,7 @@ async def main():
     )
     
     # Create runner and test
-    runner = InMemoryRunner(agent=root_agent)
+    #runner = InMemoryRunner(agent=root_agent)
     
     response = await runner.run_debug(
         "What is Agent Development Kit from Google? What languages is the SDK available in?"
