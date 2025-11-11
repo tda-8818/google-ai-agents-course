@@ -1,4 +1,4 @@
-#!/Users/elsatsia/VS Code/google-ai-agents-course/ai-agents-env/bin/python3
+#!/Users/elsatsia/VS Code/google-ai-agents-course/ai-agents-env/bin/python3.14
 # -*- coding: utf-8 -*-
 # Copyright 2025 Google LLC
 #
