@@ -89,47 +89,80 @@ chatbot_agent = LlmAgent(
     description="A text chatbot with persistent memory",
 )
 
-# Step 2: Switch to DatabaseSessionService
-# SQLite database will be created automatically
+# Re-define our app with Events Compaction enabled
+research_app_compacting = App(
+    name="research_app_compacting",
+    root_agent=chatbot_agent,
+    # This is the new part!
+    events_compaction_config=EventsCompactionConfig(
+        compaction_interval=3,  # Trigger compaction every 3 invocations
+        overlap_size=1,  # Keep 1 previous turn for context
+    ),
+)
+
 db_url = "sqlite:///my_agent_data.db"  # Local SQLite file
 session_service = DatabaseSessionService(db_url=db_url)
 
-# Step 3: Create a new runner with persistent storage
-runner = Runner(agent=chatbot_agent, app_name=APP_NAME, session_service=session_service)
+# Create a new runner for our upgraded app
+research_runner_compacting = Runner(
+    app=research_app_compacting, session_service=session_service
+)
 
-print("✅ Upgraded to persistent sessions!")
-print(f"   - Database: my_agent_data.db")
-print(f"   - Sessions will survive restarts!")
+
+print("✅ Research App upgraded with Events Compaction!")
+
 
 async def main():
-    # Run a conversation with two queries in the same session
-    # Notice: Both queries are part of the SAME session, so context is maintained
-    # await run_session(
-    # runner,
-    # ["Hi, I am Sam! What is the capital of the United States?", "Hello! What is my name?"],
-    # "test-db-session-01")
+#    # Turn 1
+#     await run_session(
+#         research_runner_compacting,
+#         "What is the latest news about AI in healthcare?",
+#         "compaction_demo",
+#     )
 
-    await run_session(
-    runner,
-    ["What is the capital of India?", "Hello! What is my name?"],
-    "test-db-session-01")
+#     # Turn 2
+#     await run_session(
+#         research_runner_compacting,
+#         "Are there any new developments in drug discovery?",
+#         "compaction_demo",
+#     )
 
-    await run_session(
-    runner, ["Hello! What is my name?"], "test-db-session-02")  # Note, we are using new session name
+#     # Turn 3 - Compaction should trigger after this turn!
+#     await run_session(
+#         research_runner_compacting,
+#         "Tell me more about the second development you found.",
+#         "compaction_demo",
+#     )
+
+#     # Turn 4
+#     await run_session(
+#         research_runner_compacting,
+#         "Who are the main companies involved in that?",
+#         "compaction_demo",
+#     )
+
+    # Get the final session state
+    final_session = await session_service.get_session(
+        app_name=research_runner_compacting.app_name,
+        user_id=USER_ID,
+        session_id="compaction_demo",
+    )
+
+    print("--- Searching for Compaction Summary Event ---")
+    found_summary = False
+    for event in final_session.events:
+        # Compaction events have a 'compaction' attribute
+        if event.actions and event.actions.compaction:
+            print("\n✅ SUCCESS! Found the Compaction Event:")
+            print(f"  Author: {event.author}")
+            print(f"\n Compacted information: {event}")
+            found_summary = True
+            break
+
+    if not found_summary:
+        print(
+            "\n❌ No compaction event found. Try increasing the number of turns in the demo."
+        )
+
 
 asyncio.run(main())
-
-import sqlite3
-
-def check_data_in_db():
-    with sqlite3.connect("my_agent_data.db") as connection:
-        cursor = connection.cursor()
-        result = cursor.execute(
-            "select app_name, session_id, author, content from events"
-        )
-        print([_[0] for _ in result.description])
-        for each in result.fetchall():
-            print(each)
-
-
-check_data_in_db()
