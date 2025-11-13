@@ -1,92 +1,116 @@
-import os
+from typing import Any, Dict
 from dotenv import load_dotenv
-from google.adk.agents import Agent
+import asyncio
+
+from google.adk.agents import Agent, LlmAgent
+from google.adk.apps.app import App, EventsCompactionConfig
 from google.adk.models.google_llm import Gemini
-from google.adk.tools import google_search
-from google.adk.agents.sequential_agent import SequentialAgent
-from google.adk.agents.parallel_agent import ParallelAgent
+from google.adk.sessions import DatabaseSessionService
+from google.adk.sessions import InMemorySessionService
+from google.adk.runners import Runner
+from google.adk.tools.tool_context import ToolContext
+from google.genai import types
 
-# PROMPT: Run the daily executive briefing on Tech, Health, and Finance
+print("✅ ADK components imported successfully.")
 
-# Load environment
+# Load environment variables from .env file
 load_dotenv()
 
-## Tech Researcher: Focuses on AI and ML trends.
-tech_researcher = Agent(
-    name="TechResearcher",
-    model=Gemini(
-        model="gemini-2.5-flash-lite"
-    ),
-    instruction="""Research the latest AI/ML trends. Include 3 key developments,
-the main companies involved, and the potential impact. Keep the report very concise (100 words).""",
-    tools=[google_search],
-    output_key="tech_research",  # The result of this agent will be stored in the session state with this key.
+# Define helper functions that will be reused throughout the notebook
+async def run_session(
+    runner_instance: Runner,
+    user_queries: list[str] | str = None,
+    session_name: str = "default",
+):
+    print(f"\n ### Session: {session_name}")
+
+    # Get app name from the Runner
+    app_name = runner_instance.app_name
+
+    # Attempt to create a new session or retrieve an existing one
+    try:
+        session = await session_service.create_session(
+            app_name=app_name, user_id=USER_ID, session_id=session_name
+        )
+    except:
+        session = await session_service.get_session(
+            app_name=app_name, user_id=USER_ID, session_id=session_name
+        )
+
+    # Process queries if provided
+    if user_queries:
+        # Convert single query to list for uniform processing
+        if type(user_queries) == str:
+            user_queries = [user_queries]
+
+        # Process each query in the list sequentially
+        for query in user_queries:
+            print(f"\nUser > {query}")
+
+            # Convert the query string to the ADK Content format
+            query = types.Content(role="user", parts=[types.Part(text=query)])
+
+            # Stream the agent's response asynchronously
+            async for event in runner_instance.run_async(
+                user_id=USER_ID, session_id=session.id, new_message=query
+            ):
+                # Check if the event contains valid content
+                if event.content and event.content.parts:
+                    # Filter out empty or "None" responses before printing
+                    if (
+                        event.content.parts[0].text != "None"
+                        and event.content.parts[0].text
+                    ):
+                        print(f"{MODEL_NAME} > ", event.content.parts[0].text)
+    else:
+        print("No queries!")
+
+
+print("✅ Helper functions defined.")
+
+retry_config = types.HttpRetryOptions(
+    attempts=5,  # Maximum retry attempts
+    exp_base=7,  # Delay multiplier
+    initial_delay=1,
+    http_status_codes=[429, 500, 503, 504],  # Retry on these HTTP errors
 )
 
-print("✅ tech_researcher created.")
+APP_NAME = "default"  # Application
+USER_ID = "default"  # User
+SESSION = "default"  # Session
 
-# Health Researcher: Focuses on medical breakthroughs.
-health_researcher = Agent(
-    name="HealthResearcher",
-    model=Gemini(
-        model="gemini-2.5-flash-lite"
-    ),
-    instruction="""Research recent medical breakthroughs. Include 3 significant advances,
-their practical applications, and estimated timelines. Keep the report concise (100 words).""",
-    tools=[google_search],
-    output_key="health_research",  # The result will be stored with this key.
+MODEL_NAME = "gemini-2.5-flash-lite"
+
+
+# Step 1: Create the LLM Agent
+root_agent = Agent(
+    model=Gemini(model="gemini-2.5-flash-lite", retry_options=retry_config),
+    name="text_chat_bot",
+    description="A text chatbot",  # Description of the agent's purpose
 )
 
-print("✅ health_researcher created.")
+# Step 2: Set up Session Management
+# InMemorySessionService stores conversations in RAM (temporary)
+session_service = InMemorySessionService()
 
-# Finance Researcher: Focuses on fintech trends.
-finance_researcher = Agent(
-    name="FinanceResearcher",
-    model=Gemini(
-        model="gemini-2.5-flash-lite"
-    ),
-    instruction="""Research current fintech trends. Include 3 key trends,
-their market implications, and the future outlook. Keep the report concise (100 words).""",
-    tools=[google_search],
-    output_key="finance_research",  # The result will be stored with this key.
-)
+# Step 3: Create the Runner
+runner = Runner(agent=root_agent, app_name=APP_NAME, session_service=session_service)
 
-print("✅ finance_researcher created.")
+print("✅ Stateful agent initialized!")
+print(f"   - Application: {APP_NAME}")
+print(f"   - User: {USER_ID}")
+print(f"   - Using: {session_service.__class__.__name__}")
 
-# The AggregatorAgent runs *after* the parallel step to synthesize the results.
-aggregator_agent = Agent(
-    name="AggregatorAgent",
-    model=Gemini(
-        model="gemini-2.5-flash-lite"
-    ),
-    # It uses placeholders to inject the outputs from the parallel agents, which are now in the session state.
-    instruction="""Combine these three research findings into a single executive summary:
+async def main():
+    # Run a conversation with two queries in the same session
+    # Notice: Both queries are part of the SAME session, so context is maintained
+    await run_session(
+        runner,
+        [
+            "Hi, I am Sam! What is the capital of United States?",
+            "Hello! What is my name?",  # This time, the agent should remember!
+        ],
+        "stateful-agentic-session",
+    )
 
-    **Technology Trends:**
-    {tech_research}
-    
-    **Health Breakthroughs:**
-    {health_research}
-    
-    **Finance Innovations:**
-    {finance_research}
-    
-    Your summary should highlight common themes, surprising connections, and the most important key takeaways from all three reports. The final summary should be around 200 words.""",
-    output_key="executive_summary",  # This will be the final output of the entire system.
-)
-
-print("✅ aggregator_agent created.")
-
-# The ParallelAgent runs all its sub-agents simultaneously.
-parallel_research_team = ParallelAgent(
-    name="ParallelResearchTeam",
-    sub_agents=[tech_researcher, health_researcher, finance_researcher],
-)
-
-# This SequentialAgent defines the high-level workflow: run the parallel team first, then run the aggregator.
-root_agent = SequentialAgent(
-    name="ResearchSystem",
-    sub_agents=[parallel_research_team, aggregator_agent],
-)
-
-print("✅ Parallel and Sequential Agents created.")
+asyncio.run(main())
