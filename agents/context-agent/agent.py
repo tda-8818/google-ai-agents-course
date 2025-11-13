@@ -82,35 +82,54 @@ SESSION = "default"  # Session
 MODEL_NAME = "gemini-2.5-flash-lite"
 
 
-# Step 1: Create the LLM Agent
-root_agent = Agent(
+# Step 1: Create the same agent (notice we use LlmAgent this time)
+chatbot_agent = LlmAgent(
     model=Gemini(model="gemini-2.5-flash-lite", retry_options=retry_config),
     name="text_chat_bot",
-    description="A text chatbot",  # Description of the agent's purpose
+    description="A text chatbot with persistent memory",
 )
 
-# Step 2: Set up Session Management
-# InMemorySessionService stores conversations in RAM (temporary)
-session_service = InMemorySessionService()
+# Step 2: Switch to DatabaseSessionService
+# SQLite database will be created automatically
+db_url = "sqlite:///my_agent_data.db"  # Local SQLite file
+session_service = DatabaseSessionService(db_url=db_url)
 
-# Step 3: Create the Runner
-runner = Runner(agent=root_agent, app_name=APP_NAME, session_service=session_service)
+# Step 3: Create a new runner with persistent storage
+runner = Runner(agent=chatbot_agent, app_name=APP_NAME, session_service=session_service)
 
-print("✅ Stateful agent initialized!")
-print(f"   - Application: {APP_NAME}")
-print(f"   - User: {USER_ID}")
-print(f"   - Using: {session_service.__class__.__name__}")
+print("✅ Upgraded to persistent sessions!")
+print(f"   - Database: my_agent_data.db")
+print(f"   - Sessions will survive restarts!")
 
 async def main():
     # Run a conversation with two queries in the same session
     # Notice: Both queries are part of the SAME session, so context is maintained
+    # await run_session(
+    # runner,
+    # ["Hi, I am Sam! What is the capital of the United States?", "Hello! What is my name?"],
+    # "test-db-session-01")
+
     await run_session(
-        runner,
-        [
-            "Hi, I am Sam! What is the capital of United States?",
-            "Hello! What is my name?",  # This time, the agent should remember!
-        ],
-        "stateful-agentic-session",
-    )
+    runner,
+    ["What is the capital of India?", "Hello! What is my name?"],
+    "test-db-session-01")
+
+    await run_session(
+    runner, ["Hello! What is my name?"], "test-db-session-02")  # Note, we are using new session name
 
 asyncio.run(main())
+
+import sqlite3
+
+def check_data_in_db():
+    with sqlite3.connect("my_agent_data.db") as connection:
+        cursor = connection.cursor()
+        result = cursor.execute(
+            "select app_name, session_id, author, content from events"
+        )
+        print([_[0] for _ in result.description])
+        for each in result.fetchall():
+            print(each)
+
+
+check_data_in_db()
