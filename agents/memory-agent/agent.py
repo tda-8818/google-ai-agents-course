@@ -68,49 +68,46 @@ USER_ID = "demo_user"
 user_agent = LlmAgent(
     model=Gemini(model="gemini-2.5-flash-lite", retry_options=retry_config),
     name="MemoryDemoAgent",
-    instruction="Answer user questions in simple words.",
+    instruction="Answer user questions in simple words. Use load_memory tool if you need to recall past conversations.",
+    tools=[
+        load_memory
+    ],  # Agent now has access to Memory and can search it whenever it decides to!
 )
 
-print("✅ Agent created")
+print("✅ Agent with load_memory tool created.")
 
-# Create Session Service
+  # Create Session Service
 session_service = InMemorySessionService()  # Handles conversations
 
 # Create runner with BOTH services
+# Create a new runner with the updated agent
 runner = Runner(
     agent=user_agent,
-    app_name="MemoryDemoApp",
+    app_name=APP_NAME,
     session_service=session_service,
-    memory_service=memory_service,  # Memory service is now available!
+    memory_service=memory_service,
 )
 
 print("✅ Agent and Runner created with memory support!")
 
 async def main():
-    # User tells agent about their favorite color
-    await run_session(
-        runner,
-        "My favorite color is blue-green. Can you write a Haiku about it?",
-        "conversation-01",  # Session ID
+  
+
+    await run_session(runner, "What is my favorite color?", "color-test")
+    await run_session(runner, "My birthday is on March 15th.", "birthday-session-01")
+
+    # Manually save the session to memory
+    birthday_session = await session_service.get_session(
+        app_name=APP_NAME, user_id=USER_ID, session_id="birthday-session-01"
     )
 
-    session = await session_service.get_session(
-    app_name=APP_NAME, user_id=USER_ID, session_id="conversation-01"
-)
+    await memory_service.add_session_to_memory(birthday_session)
 
-    # Let's see what's in the session
-    print("📝 Session contains:")
-    for event in session.events:
-        text = (
-            event.content.parts[0].text[:60]
-            if event.content and event.content.parts
-            else "(empty)"
-        )
-        print(f"  {event.content.role}: {text}...")
+    print("✅ Birthday session saved to memory!")
 
-    # This is the key method!
-    await memory_service.add_session_to_memory(session)
-
-    print("✅ Session added to memory!")
+    # Test retrieval in a NEW session
+    await run_session(
+        runner, "When is my birthday?", "birthday-session-02"  # Different session ID
+    )
 
 asyncio.run(main())
