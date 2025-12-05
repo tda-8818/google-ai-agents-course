@@ -7,6 +7,16 @@ from dotenv import load_dotenv
 from google.genai import types
 from typing import List
 
+from google.adk.runners import InMemoryRunner
+from google.adk.plugins.logging_plugin import (
+    LoggingPlugin,
+)  # <---- 1. Import the Plugin
+from google.genai import types
+import asyncio
+
+
+print("✅ Runner configured")
+
 load_dotenv()
 
 retry_config = types.HttpRetryOptions(
@@ -39,16 +49,35 @@ google_search_agent = LlmAgent(
 )
 
 
+
+
 # Root agent
-root_agent = LlmAgent(
+research_agent_with_plugin = LlmAgent(
     name="research_paper_finder_agent",
     model=Gemini(model="gemini-2.5-flash-lite", retry_options=retry_config),
     instruction="""Your task is to find research papers and count them. 
-
-    You MUST ALWAYS follow these steps:
-    1) Find research papers on the user provided topic using the 'google_search_agent'. 
-    2) Then, pass the papers to 'count_papers' tool to count the number of papers returned.
-    3) Return both the list of research papers and the total number of papers.
-    """,
-    tools=[AgentTool(agent=google_search_agent), count_papers]
+   
+   You must follow these steps:
+   1) Find research papers on the user provided topic using the 'google_search_agent'. 
+   2) Then, pass the papers to 'count_papers' tool to count the number of papers returned.
+   3) Return both the list of research papers and the total number of papers.
+   """,
+    tools=[AgentTool(agent=google_search_agent), count_papers],
 )
+
+print("✅ Agent created")
+
+runner = InMemoryRunner(
+    agent=research_agent_with_plugin,
+    plugins=[
+        LoggingPlugin()
+    ],  # <---- 2. Add the plugin. Handles standard Observability logging across ALL agents
+)
+
+async def main():
+    print("🚀 Running agent with LoggingPlugin...")
+    print("📊 Watch the comprehensive logging output below:\n")
+
+    response = await runner.run_debug("Find recent papers on quantum computing")
+
+asyncio.run(main())
