@@ -70,7 +70,7 @@ user_agent = LlmAgent(
     name="MemoryDemoAgent",
     instruction="Answer user questions in simple words. Use load_memory tool if you need to recall past conversations.",
     tools=[
-        load_memory
+        preload_memory
     ],  # Agent now has access to Memory and can search it whenever it decides to!
 )
 
@@ -109,5 +109,48 @@ async def main():
     await run_session(
         runner, "When is my birthday?", "birthday-session-02"  # Different session ID
     )
+    
+    # ===== ADD THIS SEARCH SECTION =====
+    print("\n" + "="*60)
+    print("SECTION 5.5: MANUAL MEMORY SEARCH")
+    print("="*60)
+    
+    # Test different search queries like the example
+    test_queries = [
+        "What is the user's favorite color?",
+        "what color does the user like",
+        "haiku", 
+        "age",
+        "preferred hue",
+        "birthday",
+        "March"
+    ]
+    
+    for query in test_queries:
+        print(f"\n🔍 Searching for: '{query}'")
+        
+        search_response = await memory_service.search_memory(
+            app_name=APP_NAME, 
+            user_id=USER_ID, 
+            query=query
+        )
+        
+        print(f"  Found {len(search_response.memories)} relevant memories")
+        
+        # Show first few results
+        for i, memory in enumerate(search_response.memories[:3], 1):  # Limit to 3
+            if memory.content and memory.content.parts:
+                text = memory.content.parts[0].text[:80]
+                print(f"  {i}. [{memory.author}]: {text}...")
+    
+    print("\n" + "="*60)
+    print("OBSERVATIONS:")
+    print("• 'What is the user's favorite color?' finds color memories")
+    print("• 'haiku' finds the haiku response") 
+    print("• 'age' finds nothing (not mentioned)")
+    print("• 'preferred hue' might find color memories")
+    print("• 'birthday' finds birthday memories")
+    print("• Memory search is keyword-based!")
+    print("="*60)
 
 asyncio.run(main())
